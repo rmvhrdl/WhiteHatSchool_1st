@@ -56,10 +56,6 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header,
                               const u_char *packet)
 {
   struct ethheader *eth = (struct ethheader *)packet;
-  if (ntohs(eth->ether_type) == 0x0800) { // 0x0800 is IP type
-    struct ipheader * ip = (struct ipheader *)
-                           (packet + sizeof(struct ethheader));
-  if (ip->iph_protocol == IPPROTO_TCP){
   printf("-----------------------------------------\n");
   printf("Ethernet Source MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
   eth->ether_shost[0], eth->ether_shost[1],
@@ -70,30 +66,40 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header,
   eth->ether_dhost[0], eth->ether_dhost[1],
   eth->ether_dhost[2], eth->ether_dhost[3],
   eth->ether_dhost[4], eth->ether_dhost[5]);
+  if (ntohs(eth->ether_type) == 0x0800) { // 0x0800 is IP type
+    struct ipheader * ip = (struct ipheader *)
+                           (packet + sizeof(struct ethheader));
 
     printf("\nIP Header\n");
     printf("From: %s\n", inet_ntoa(ip->iph_sourceip));
     printf("To: %s\n", inet_ntoa(ip->iph_destip));
 
-
+   if (ip->iph_protocol == IPPROTO_TCP){
     struct tcpheader *tcp = (struct tcpheader *)(packet + sizeof(struct ethheader) + sizeof(struct ipheader));
 
     printf("\nTCP Header\n");
     printf("Source Port: %u\n", ntohs(tcp->tcp_sport));
     printf("Destination Port: %u\n", ntohs(tcp->tcp_dport));
 
-      int iph_len = ip->iph_ihl * 4;
-      int data_len = ntohs(ip->iph_len) - iph_len - (tcp->tcp_offx2 * 4);
-
-
-      printf("\nMessage Data\n");
-      for (int i = 0; i < data_len; i++) {
-      printf("%c", packet[iph_len + (tcp->tcp_offx2 * 4) + i]);
+    int data_offset = sizeof(struct ethheader) + sizeof(struct ipheader) + sizeof(struct tcpheader);
+            int data_length = header->len - data_offset;
+            printf("TCP Data: ");
+            for (int i = 0; i < data_length && i < 16; i++) {
+                printf("%02X ", packet[data_offset + i]);
             }
-            printf("\n");
-      }
-
+	    printf("\n");
+   } 
+   else{
+	   int ip_data_offset = sizeof(struct ethheader) + (ip->iph_ihl & 0x0F) * 4;
+        int ip_data_length = ntohs(ip->iph_len) - (ip->iph_ihl & 0x0F) * 4;
+        printf("IP Data: ");
+        for (int i = 0; i < ip_data_length && i < 16; i++) {
+            printf("%02X ", packet[ip_data_offset + i]);
+        }
+        printf("\n");
   }
+  
+}
 }
 
 
@@ -103,10 +109,10 @@ int main()
   pcap_t *handle;
   char errbuf[PCAP_ERRBUF_SIZE];
   struct bpf_program fp;
-  char filter_exp[] = "tcp";
+  char filter_exp[] = "";
   bpf_u_int32 net;
 
-  // Step 1: Open live pcap session on NIC with name enp0s3
+  // Step 1: Open live pcap session on NIC with name ens33
   handle = pcap_open_live("ens33", BUFSIZ, 1, 1000, errbuf);
 
   // Step 2: Compile filter_exp into BPF psuedo-code
@@ -122,5 +128,4 @@ int main()
   pcap_close(handle);   //Close the handle
   return 0;
 }
-
 
